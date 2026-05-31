@@ -1,0 +1,32 @@
+{
+  "name": "afk-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AFK coding pipeline built on defineworkflow: spec → slice → Ralph/TDD → refactor → QA → review",
+  "scripts": {
+    "afk": "defineworkflow run workflows/afk-pipeline.workflow.ts",
+    "afk:mock": "defineworkflow run workflows/afk-pipeline.workflow.ts --mock --yes",
+    "haiku": "defineworkflow run workflows/haiku.workflow.ts",
+    "haiku:mock": "defineworkflow run workflows/haiku.workflow.ts --mock --yes",
+    "adapters": "defineworkflow adapters",
+    "list": "defineworkflow list",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "defineworkflow": "^0.4.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

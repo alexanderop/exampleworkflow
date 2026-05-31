@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+
+# defineworkflow runs are persisted under the home dir, but keep any local copies out
+.workflow/
+
+# QA artifacts produced by the agentic QA phase
+qa/
