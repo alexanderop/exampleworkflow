@@ -11,6 +11,10 @@
     "haiku:mock": "defineworkflow run workflows/haiku.workflow.ts --mock --yes",
     "adapters": "defineworkflow adapters",
     "list": "defineworkflow list",
+    "resume": "defineworkflow resume",
+    "watch": "defineworkflow watch",
+    "stop": "defineworkflow stop",
+    "save": "defineworkflow save",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
