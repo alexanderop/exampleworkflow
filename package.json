@@ -17,7 +17,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "defineworkflow": "^0.4.0",
+    "defineworkflow": "^0.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

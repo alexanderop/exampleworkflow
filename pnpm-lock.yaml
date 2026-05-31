@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       defineworkflow:
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^0.5.0
+        version: 0.5.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -257,8 +257,8 @@ packages:
     resolution: {integrity: sha512-rcQ1bsQO9799wq24uE5AM2tAILy4gXGIK/njFWcVQkGNZ96edlpY+A7bjwvzjYvLDyzmG1MmMLZhpcsb+klNMQ==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
-  defineworkflow@0.4.0:
-    resolution: {integrity: sha512-DGXWbxAaSIBo9oJPHw/dfp9OqPn2qbaui8PntFukwrYrwe3ABTlPTBf6fn29KcIN2d/TepplfewDtawVBke2Lg==}
+  defineworkflow@0.5.0:
+    resolution: {integrity: sha512-9zPAEsgQB8Bcu6cjI0lFoeaPHMJYYR1BBsUOIZap1eQUj4VOI2IEBQ7PhCGT35a1tSYtz1XUaMFLmLwGS3UVEg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -573,7 +573,7 @@ snapshots:
 
   convert-to-spaces@2.0.1: {}
 
-  defineworkflow@0.4.0:
+  defineworkflow@0.5.0:
     dependencies:
       '@anthropic-ai/sdk': 0.100.1(zod@4.4.3)
       acorn: 8.16.0

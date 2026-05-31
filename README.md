@@ -96,7 +96,10 @@ accountable — you ship it.
 
 ```
 workflows/
-  afk-pipeline.workflow.ts   the six-phase pipeline (AFK middle)
+  afk-pipeline.workflow.ts   the six-phase pipeline (AFK middle) — control flow only
+  afk-pipeline/
+    schemas.ts               zod schemas + inferred types for every phase
+    prompts.ts               the prompt builders, one per phase
   haiku.workflow.ts          minimal smoke test
 docs/
   prd-booking-wizard.md      sample PRD — replace with your own
@@ -104,18 +107,29 @@ scripts/
   ralph.sh                   standalone bash Ralph driver (worktree-per-ticket)
 ```
 
+Since `defineworkflow` 0.5.0 the runner bundles relative imports (esbuild
+`bundle: true` + a local-only resolver), so schemas and prompts live in their own
+files under `workflows/afk-pipeline/` and get inlined before the run. A workflow
+may only import **local files** (`./…`, `../…`) or **`"defineworkflow"`** —
+anything else is rejected at bundle time.
+
 ## Engine gotchas (baked into the workflows here)
 
 `defineworkflow` runs workflow bodies in a deterministic VM sandbox. Two rules
 the files in `workflows/` already follow:
 
-- **`import { z } from "defineworkflow"`**, not from `"zod"`. The sandbox strips
-  the `defineworkflow` import and injects the engine's own `z`; a raw `zod`
-  import can't be resolved and fails to transform.
-- **The default-exported `defineWorkflow(...)` must be the first statement.** All
-  schemas and helpers live *inside* `run()`. (Also: don't put the literal text
-  `export default defineWorkflow(` in a comment — the transform replaces the
-  first match.)
+- **`import { z } from "defineworkflow"`**, not from `"zod"` — including in the
+  sibling `schemas.ts`. The sandbox strips the `defineworkflow` import and injects
+  the engine's own `z`; a raw `zod` import can't be resolved and fails to transform.
+- **Split schemas and prompts into sibling files** and import them relatively
+  (`./afk-pipeline/schemas`, `./afk-pipeline/prompts`). 0.5.0 bundles those in, so
+  the main workflow file is just control flow — no need to cram everything into
+  `run()` as 0.4.0 required.
+- **Runtime primitives** (`agent`, `parallel`, `phase`, `log`, `args`) can be
+  imported from `"defineworkflow"` *or* destructured from `run()`'s context —
+  both resolve to the same injected runtime. We import them here because the
+  importable stubs carry the schema-generic overload, so `agent({ schema })`'s
+  return type is inferred; the context-injected versions return `unknown`.
 - **No `Date.now()`, `Math.random()`, or argless `new Date()`** in a workflow
   body — they'd break journal replay. Pass timestamps via `--args`.
 
