@@ -18,12 +18,13 @@ import { agent, args, defineWorkflow, log, phase, z } from "defineworkflow";
 export default defineWorkflow({
   name: "lfg",
   description:
-    "Autonomous engineering autopilot: recall, plan, implement (TDD), review, verify, ship, watch CI, compound",
+    "Autonomous engineering autopilot: recall, specify, plan, implement (TDD), review, verify, ship, watch CI, compound",
   harness: "claude",
   phases: [
     { title: "Isolate", detail: "create worktree/branch" },
     { title: "Recall", detail: "search docs/solutions" },
-    { title: "Plan", detail: "write implementation plan" },
+    { title: "Specify", detail: "write spec: assumptions + testable success criteria" },
+    { title: "Plan", detail: "write implementation plan from spec" },
     { title: "Implement", detail: "per-task TDD + review" },
     { title: "Review", detail: "whole-diff review + autofix" },
     { title: "Verify", detail: "tests + build green" },
@@ -44,6 +45,20 @@ export default defineWorkflow({
       learnings: z
         .array(z.string())
         .describe("prevention/guidance bullets from docs/solutions; empty if none"),
+    });
+
+    const Spec = z.object({
+      specPath: z.string().describe("path to the written spec file"),
+      assumptions: z
+        .array(z.string())
+        .describe("assumptions being proceeded on (recorded for human audit on the PR)"),
+      successCriteria: z
+        .array(z.string())
+        .min(1)
+        .describe("specific, testable conditions that define 'done' — the contract Verify checks"),
+      openQuestions: z
+        .array(z.string())
+        .describe("unresolved questions + the interpretation chosen for each; empty if none"),
     });
 
     const Task = z.object({
@@ -118,21 +133,57 @@ Search docs/solutions/ for prior learnings relevant to this feature (grep keywor
       { label: "recall", phase: "Recall", schema: Recall },
     );
 
-    // ===== Step 2 — Plan =====
-    phase("Plan");
+    // ===== Step 2 — Specify (lock down "done" before any plan or code) =====
+    phase("Specify");
     const learningsBlock = recall.learnings.length
       ? `Prior learnings to honor:\n${recall.learnings.map((l) => `- ${l}`).join("\n")}`
       : "No prior learnings found.";
-    const plan = await agent(
-      `You are Step 2 (Plan) for: "${feature}".
+    const spec = await agent(
+      `You are Step 2 (Specify) for: "${feature}".
 ${learningsBlock}
 
-Write a comprehensive implementation plan to docs/superpowers/plans/<feature-slug>.md: bite-sized TDD steps, exact file paths, COMPLETE code in each step, DRY/YAGNI, frequent commits, no placeholders or TODOs. Decompose into ordered, self-contained tasks. Return the plan file path and the task list (each task's full text in 'description').`,
+Write a structured specification BEFORE any plan or code — the spec is the source of truth for what "done" means. This pipeline runs hands-off, so the spec workflow's human-review gate becomes self-review plus a recorded assumption trail: surface your assumptions in writing and PROCEED on them (never block waiting for an answer).
+
+Read the repo first (don't invent the tech stack or commands). Then write a spec to docs/specs/<feature-slug>.md covering:
+- **Objective** — what we're building and why; who the user is; what success looks like.
+- **Assumptions** — every assumption you're proceeding on (e.g. framework, auth model, datastore), inferred from the codebase. These are recorded for human audit on the PR.
+- **Tech Stack** — framework/language/key deps WITH versions, read from the repo.
+- **Commands** — full executable build / test / lint / dev commands (with flags), from the repo.
+- **Project Structure** — where source, tests, and docs for this change live.
+- **Testing Strategy** — framework, where tests live, which levels (unit/integration/e2e) cover which concerns.
+- **Success Criteria** — reframe every vague requirement into SPECIFIC, TESTABLE conditions (numbers, observable behaviors, commands that must pass). This is the contract the Verify step checks against. If a requirement can't be reframed into something checkable, record it under Open Questions.
+- **Boundaries** — Always (run tests before commit, follow existing naming, validate inputs); Record-and-proceed (schema changes, new deps, CI-config changes — only if the task plainly needs them, noted on the PR); Never (commit secrets, edit vendored dirs, weaken/skip/delete a failing test to pass).
+- **Open Questions** — anything unresolved, each WITH the interpretation you chose and are proceeding on.
+
+Self-review before returning: is every vague requirement now a testable success criterion? Are assumptions written down, not silent? Then return the spec file path, the assumptions, the success criteria, and the open questions.`,
+      { label: "specify", phase: "Specify", schema: Spec },
+    );
+    log(`spec: ${spec.specPath} (${spec.successCriteria.length} success criteria)`);
+
+    const specBlock = [
+      `Spec: ${spec.specPath} — read it in full before starting.`,
+      `Success criteria (the definition of done):\n${spec.successCriteria.map((c) => `- ${c}`).join("\n")}`,
+      spec.assumptions.length
+        ? `Assumptions in force:\n${spec.assumptions.map((a) => `- ${a}`).join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    // ===== Step 3 — Plan =====
+    phase("Plan");
+    const plan = await agent(
+      `You are Step 3 (Plan) for: "${feature}".
+${learningsBlock}
+
+${specBlock}
+
+Turn the validated spec into a comprehensive implementation plan at docs/superpowers/plans/<feature-slug>.md: bite-sized TDD steps, exact file paths, COMPLETE code in each step, DRY/YAGNI, frequent commits, no placeholders or TODOs. Every success criterion in the spec MUST map to at least one task — do not plan work the spec doesn't call for (YAGNI), and do not leave a success criterion unaddressed. Decompose into ordered, self-contained tasks. Return the plan file path and the task list (each task's full text in 'description').`,
       { label: "plan", phase: "Plan", schema: Plan },
     );
     log(`plan: ${plan.planPath} (${plan.tasks.length} tasks)`);
 
-    // ===== Step 3 — Implement (sequential; shared working tree) =====
+    // ===== Step 4 — Implement (sequential; shared working tree) =====
     phase("Implement");
     const reports: { id: string; name: string; report: Report }[] = [];
     for (let i = 0; i < plan.tasks.length; i++) {
@@ -182,21 +233,26 @@ Fix the root cause of each (TDD where behavior changes), keep all tests green, c
       reports.push({ id: task.id, name: task.name, report });
     }
 
-    // ===== Step 4 — Whole-diff review + autofix =====
+    // ===== Step 5 — Whole-diff review + autofix =====
     phase("Review");
     await agent(
-      `You are Step 4 (whole-diff Review) for: "${feature}".
+      `You are Step 5 (whole-diff Review) for: "${feature}".
 Plan: ${plan.planPath}
 
-Review the full branch diff against the plan and requirements: correctness, architecture, error handling, tests verifying real behavior, edge cases. Apply the valid fixes with technical rigor (verify each suggestion — don't blindly agree). Commit as \`fix(review): apply code review feedback\`. If a finding can't be auto-resolved, note it for the PR body.`,
+${specBlock}
+
+Review the full branch diff against the spec and plan: does it satisfy every success criterion (nothing missing, nothing extra beyond the spec)? Also check correctness, architecture, error handling, tests verifying real behavior, and edge cases. Apply the valid fixes with technical rigor (verify each suggestion — don't blindly agree). Commit as \`fix(review): apply code review feedback\`. If a finding can't be auto-resolved, note it for the PR body.`,
       { label: "diff-review", phase: "Review" },
     );
 
-    // ===== Step 5 — Verify (evidence before claims) with bounded debug loop =====
+    // ===== Step 6 — Verify (evidence before claims) with bounded debug loop =====
     phase("Verify");
     let verify = await agent(
-      `You are Step 5 (Verify) for: "${feature}".
-Run the project's test suite AND the build, and exercise the app (start the dev server / run the CLI) if there's a runnable surface. Report ACTUAL command output — never claim green without running it. Return green, a summary, and any failures.`,
+      `You are Step 6 (Verify) for: "${feature}".
+
+${specBlock}
+
+Verify the work against the spec's success criteria — each one is a checkable condition, so check it. Run the project's test suite AND the build, and exercise the app (start the dev server / run the CLI) if there's a runnable surface. Report ACTUAL command output — never claim green without running it. Treat a success criterion you cannot demonstrate as a failure. Return green (true only if every success criterion holds and tests+build pass), a summary, and any failures.`,
       { label: "verify", phase: "Verify", schema: Verify },
     );
     let debugTries = 0;
@@ -218,16 +274,28 @@ Find the ROOT CAUSE before fixing — no symptom patches, no weakening or skippi
       );
     }
 
-    // ===== Step 6 — Ship =====
+    // ===== Step 7 — Ship =====
     phase("Ship");
+    const assumptionsForPr = spec.assumptions.length
+      ? `Recorded assumptions to surface in the PR body (so a human can audit them):\n${spec.assumptions.map((a) => `- ${a}`).join("\n")}`
+      : "No assumptions were recorded.";
+    const openQuestionsForPr = spec.openQuestions.length
+      ? `Open questions + chosen interpretations to surface in the PR body:\n${spec.openQuestions.map((q) => `- ${q}`).join("\n")}`
+      : "";
     const ship = await agent(
-      `You are Step 6 (Ship) for: "${feature}" on branch ${iso.branch}.
-Commit any remaining changes, push the branch, and open a PR (\`gh pr create\`) with a Summary + Test Plan. If there's no remote or gh is unavailable, just push the branch. Return branch, pushed, and prUrl if a PR was opened.`,
+      `You are Step 7 (Ship) for: "${feature}" on branch ${iso.branch}.
+Spec: ${spec.specPath}
+
+${assumptionsForPr}
+
+${openQuestionsForPr}
+
+Commit any remaining changes (including the spec file), push the branch, and open a PR (\`gh pr create\`) with a Summary, a Test Plan, a link to the spec (${spec.specPath}), and an "## Assumptions & Open Questions" section listing the recorded assumptions and chosen interpretations above so a human can audit the autonomous calls. If there's no remote or gh is unavailable, just push the branch. Return branch, pushed, and prUrl if a PR was opened.`,
       { label: "ship", phase: "Ship", schema: Ship },
     );
     log(ship.prUrl ? `PR: ${ship.prUrl}` : `pushed branch ${ship.branch}`);
 
-    // ===== Step 7 — CI watch + autofix (max 3 cycles; only if a PR exists) =====
+    // ===== Step 8 — CI watch + autofix (max 3 cycles; only if a PR exists) =====
     phase("CI");
     let ci: z.infer<typeof Ci> = {
       green: true,
@@ -236,7 +304,7 @@ Commit any remaining changes, push the branch, and open a PR (\`gh pr create\`) 
     };
     if (ship.prUrl) {
       ci = await agent(
-        `You are Step 7 (CI watch) for PR ${ship.prUrl}. Check pipeline status (\`gh pr checks\` / \`gh run view\`). Return green, failingChecks, summary.`,
+        `You are Step 8 (CI watch) for PR ${ship.prUrl}. Check pipeline status (\`gh pr checks\` / \`gh run view\`). Return green, failingChecks, summary.`,
         { label: "ci", phase: "CI", schema: Ci },
       );
       let ciTries = 0;
@@ -265,17 +333,19 @@ Read the failed logs, fix the REAL cause (NEVER skip/weaken/mock an assertion to
       }
     }
 
-    // ===== Step 8 — Compound (write side of the loop) =====
+    // ===== Step 9 — Compound (write side of the loop) =====
     phase("Compound");
     const compound = await agent(
-      `You are Step 8 (Compound) for: "${feature}".
+      `You are Step 9 (Compound) for: "${feature}".
+Spec: ${spec.specPath}
 Document what was built/solved into docs/solutions/<category>/<slug>.md with YAML frontmatter (title, date, track, category, problem_type, tags). Dedupe against existing docs (update on high overlap rather than duplicate). Ensure CLAUDE.md/AGENTS.md surfaces the store. If the work was too trivial to document, skip with a reason. Return status (complete|skipped), docPath, reason.`,
       { label: "compound", phase: "Compound", schema: Compound },
     );
 
-    // ===== Step 9 — DONE =====
+    // ===== Step 10 — DONE =====
     return {
       feature,
+      specPath: spec.specPath,
       branch: ship.branch,
       prUrl: ship.prUrl ?? null,
       tasks: reports.map((r) => ({
