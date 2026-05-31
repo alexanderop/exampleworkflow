@@ -15,7 +15,12 @@
     "watch": "defineworkflow watch",
     "stop": "defineworkflow stop",
     "save": "defineworkflow save",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "check": "oxfmt --check && oxlint && tsc --noEmit"
   },
   "engines": {
     "node": ">=20"
@@ -26,6 +31,8 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
     "typescript": "^6.0.3"
   },
   "pnpm": {
